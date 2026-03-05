@@ -71,7 +71,7 @@ export class ReceivablesController {
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
-      destination: join(process.cwd(), 'uploads'),
+      destination: join(process.env.VERCEL ? '/tmp' : process.cwd(), 'uploads'),
       filename: (_req, file, cb) => {
         const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
         cb(null, uniqueName);

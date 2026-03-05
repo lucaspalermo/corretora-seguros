@@ -29,7 +29,8 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
-const uploadsDir = join(process.cwd(), 'uploads', 'documents');
+const baseDir = process.env.VERCEL ? '/tmp' : process.cwd();
+const uploadsDir = join(baseDir, 'uploads', 'documents');
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 
 @ApiTags('Documentos')
