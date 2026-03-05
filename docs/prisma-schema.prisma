@@ -1,0 +1,452 @@
+// ============================================================
+// PRISMA SCHEMA - CORRETORA DE SEGUROS SAAS
+// ============================================================
+// Banco: PostgreSQL 16
+// Estrategia multi-tenant: schema-per-tenant
+// Este schema representa as tabelas DENTRO de cada tenant schema
+// As tabelas public (tenants, plans) ficam em schema separado
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public", "tenant"]
+}
+
+// ============================================================
+// SCHEMA PUBLIC - Compartilhado entre todos os tenants
+// ============================================================
+
+model Tenant {
+  id         String       @id @default(uuid()) @db.Uuid
+  name       String       @db.VarChar(255)
+  slug       String       @unique @db.VarChar(100)
+  document   String       @db.VarChar(18) // CNPJ
+  schemaName String       @unique @map("schema_name") @db.VarChar(100)
+  planId     String       @map("plan_id") @db.Uuid
+  status     TenantStatus @default(active)
+  settings   Json?        @default("{}")
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  plan Plan @relation(fields: [planId], references: [id])
+
+  @@map("tenants")
+  @@schema("public")
+}
+
+model Plan {
+  id           String      @id @default(uuid()) @db.Uuid
+  name         String      @db.VarChar(100)
+  maxUsers     Int         @map("max_users")
+  maxPolicies  Int         @map("max_policies")
+  maxStorageMb Int         @map("max_storage_mb")
+  priceCents   Int         @map("price_cents")
+  billingCycle BillingCycle @map("billing_cycle")
+  features     Json?       @default("{}")
+  status       PlanStatus  @default(active)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenants Tenant[]
+
+  @@map("plans")
+  @@schema("public")
+}
+
+enum TenantStatus {
+  active
+  suspended
+  cancelled
+
+  @@schema("public")
+}
+
+enum PlanStatus {
+  active
+  inactive
+
+  @@schema("public")
+}
+
+enum BillingCycle {
+  monthly
+  yearly
+
+  @@schema("public")
+}
+
+// ============================================================
+// SCHEMA TENANT - Replicado para cada corretora
+// ============================================================
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.Uuid
+  name         String     @db.VarChar(255)
+  email        String     @unique @db.VarChar(255)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  cpf          String?    @db.VarChar(14)
+  role         UserRole   @default(viewer)
+  status       UserStatus @default(active)
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamptz
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  seller        Seller?
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  refreshTokens RefreshToken[]
+
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+  @@schema("tenant")
+}
+
+model Client {
+  id                   String       @id @default(uuid()) @db.Uuid
+  tenantId             String       @map("tenant_id") @db.Uuid
+  name                 String       @db.VarChar(255)
+  document             String       @db.VarChar(18)
+  documentType         DocumentType @map("document_type")
+  personType           PersonType   @map("person_type")
+  phone                String?      @db.VarChar(20)
+  email                String?      @db.VarChar(255)
+  addressStreet        String?      @map("address_street") @db.VarChar(255)
+  addressNumber        String?      @map("address_number") @db.VarChar(20)
+  addressComplement    String?      @map("address_complement") @db.VarChar(100)
+  addressNeighborhood  String?      @map("address_neighborhood") @db.VarChar(100)
+  addressCity          String?      @map("address_city") @db.VarChar(100)
+  addressState         String?      @map("address_state") @db.Char(2)
+  addressZip           String?      @map("address_zip") @db.VarChar(10)
+  status               ClientStatus @default(active)
+  notes                String?      @db.Text
+  lgpdConsentAt        DateTime?    @map("lgpd_consent_at") @db.Timestamptz
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  policies    Policy[]
+  receivables Receivable[]
+
+  @@index([tenantId])
+  @@index([document])
+  @@index([name])
+  @@index([status])
+  @@map("clients")
+  @@schema("tenant")
+}
+
+model Insurer {
+  id                   String         @id @default(uuid()) @db.Uuid
+  tenantId             String         @map("tenant_id") @db.Uuid
+  name                 String         @db.VarChar(255)
+  category             InsuranceCategory
+  defaultCommissionPct Decimal        @map("default_commission_pct") @db.Decimal(5, 2)
+  paymentMethod        String?        @map("payment_method") @db.VarChar(100)
+  contactName          String?        @map("contact_name") @db.VarChar(255)
+  contactPhone         String?        @map("contact_phone") @db.VarChar(20)
+  contactEmail         String?        @map("contact_email") @db.VarChar(255)
+  status               InsurerStatus  @default(active)
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+
+  policies Policy[]
+
+  @@index([tenantId])
+  @@index([category])
+  @@index([status])
+  @@map("insurers")
+  @@schema("tenant")
+}
+
+model Seller {
+  id                    String       @id @default(uuid()) @db.Uuid
+  tenantId              String       @map("tenant_id") @db.Uuid
+  userId                String?      @unique @map("user_id") @db.Uuid
+  name                  String       @db.VarChar(255)
+  cpf                   String       @db.VarChar(14)
+  defaultCommissionPct  Decimal      @map("default_commission_pct") @db.Decimal(5, 2)
+  specialCommissionPct  Decimal?     @map("special_commission_pct") @db.Decimal(5, 2)
+  phone                 String?      @db.VarChar(20)
+  email                 String?      @db.VarChar(255)
+  status                SellerStatus @default(active)
+  createdAt             DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  user               User?               @relation(fields: [userId], references: [id])
+  policies           Policy[]
+  commissionPayments CommissionPayment[]
+
+  @@index([tenantId])
+  @@index([cpf])
+  @@index([status])
+  @@map("sellers")
+  @@schema("tenant")
+}
+
+model Policy {
+  id                   String            @id @default(uuid()) @db.Uuid
+  tenantId             String            @map("tenant_id") @db.Uuid
+  clientId             String            @map("client_id") @db.Uuid
+  insurerId            String            @map("insurer_id") @db.Uuid
+  sellerId             String            @map("seller_id") @db.Uuid
+  policyNumber         String            @map("policy_number") @db.VarChar(100)
+  category             InsuranceCategory
+  type                 PolicyType        @default(active)
+  startDate            DateTime          @map("start_date") @db.Date
+  endDate              DateTime?         @map("end_date") @db.Date
+  renewalDate          DateTime?         @map("renewal_date") @db.Date
+  premiumCents         Int               @map("premium_cents")
+  paymentMethod        PaymentMethod     @map("payment_method")
+  installments         Int               @default(1)
+  brokerCommissionPct  Decimal           @map("broker_commission_pct") @db.Decimal(5, 2)
+  sellerCommissionPct  Decimal           @map("seller_commission_pct") @db.Decimal(5, 2)
+  autoRenew            Boolean           @default(false) @map("auto_renew")
+  notes                String?           @db.Text
+  metadata             Json?             @default("{}")
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  cancelledAt          DateTime?         @map("cancelled_at") @db.Timestamptz
+
+  client      Client       @relation(fields: [clientId], references: [id])
+  insurer     Insurer      @relation(fields: [insurerId], references: [id])
+  seller      Seller       @relation(fields: [sellerId], references: [id])
+  receivables Receivable[]
+
+  @@index([tenantId])
+  @@index([policyNumber])
+  @@index([clientId])
+  @@index([insurerId])
+  @@index([sellerId])
+  @@index([category, type])
+  @@index([endDate])
+  @@index([renewalDate])
+  @@map("policies")
+  @@schema("tenant")
+}
+
+model Receivable {
+  id                     String           @id @default(uuid()) @db.Uuid
+  tenantId               String           @map("tenant_id") @db.Uuid
+  policyId               String           @map("policy_id") @db.Uuid
+  clientId               String           @map("client_id") @db.Uuid
+  installmentNumber      Int              @map("installment_number")
+  grossAmountCents       Int              @map("gross_amount_cents")
+  brokerCommissionCents  Int              @map("broker_commission_cents")
+  sellerCommissionCents  Int              @map("seller_commission_cents")
+  netAmountCents         Int              @map("net_amount_cents")
+  dueDate                DateTime         @map("due_date") @db.Date
+  receivedDate           DateTime?        @map("received_date") @db.Date
+  status                 ReceivableStatus @default(pending)
+  paymentProofUrl        String?          @map("payment_proof_url") @db.VarChar(500)
+  notes                  String?          @db.Text
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  policy             Policy              @relation(fields: [policyId], references: [id])
+  client             Client              @relation(fields: [clientId], references: [id])
+  commissionPayments CommissionPayment[]
+
+  @@index([tenantId])
+  @@index([policyId])
+  @@index([clientId])
+  @@index([dueDate, status])
+  @@index([status])
+  @@index([receivedDate])
+  @@map("receivables")
+  @@schema("tenant")
+}
+
+model CommissionPayment {
+  id           String                  @id @default(uuid()) @db.Uuid
+  tenantId     String                  @map("tenant_id") @db.Uuid
+  sellerId     String                  @map("seller_id") @db.Uuid
+  receivableId String                  @map("receivable_id") @db.Uuid
+  amountCents  Int                     @map("amount_cents")
+  paidDate     DateTime?               @map("paid_date") @db.Date
+  status       CommissionPaymentStatus @default(pending)
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz
+
+  seller     Seller     @relation(fields: [sellerId], references: [id])
+  receivable Receivable @relation(fields: [receivableId], references: [id])
+
+  @@index([tenantId])
+  @@index([sellerId, paidDate])
+  @@map("commission_payments")
+  @@schema("tenant")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  action    String   @db.VarChar(50) // CREATE, UPDATE, DELETE, LOGIN, EXPORT
+  entity    String   @db.VarChar(50) // policy, client, receivable
+  entityId  String?  @map("entity_id") @db.Uuid
+  oldValues Json?    @map("old_values")
+  newValues Json?    @map("new_values")
+  ipAddress String?  @map("ip_address") @db.VarChar(45)
+  userAgent String?  @map("user_agent") @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+  @@schema("tenant")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  tenantId  String           @map("tenant_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String           @db.VarChar(255)
+  message   String           @db.Text
+  read      Boolean          @default(false)
+  entity    String?          @db.VarChar(50)
+  entityId  String?          @map("entity_id") @db.Uuid
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId, read])
+  @@map("notifications")
+  @@schema("tenant")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([tokenHash])
+  @@index([userId])
+  @@map("refresh_tokens")
+  @@schema("tenant")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  admin
+  financial
+  seller
+  viewer
+
+  @@schema("tenant")
+}
+
+enum UserStatus {
+  active
+  inactive
+  blocked
+
+  @@schema("tenant")
+}
+
+enum DocumentType {
+  cpf
+  cnpj
+
+  @@schema("tenant")
+}
+
+enum PersonType {
+  pf
+  pj
+
+  @@schema("tenant")
+}
+
+enum ClientStatus {
+  active
+  inactive
+
+  @@schema("tenant")
+}
+
+enum InsurerStatus {
+  active
+  inactive
+
+  @@schema("tenant")
+}
+
+enum SellerStatus {
+  active
+  inactive
+
+  @@schema("tenant")
+}
+
+enum InsuranceCategory {
+  auto
+  health
+  life
+  business
+  other
+
+  @@schema("tenant")
+}
+
+enum PolicyType {
+  active
+  lifetime
+  cancelled
+
+  @@schema("tenant")
+}
+
+enum PaymentMethod {
+  boleto
+  credit_card
+  debit
+  pix
+  transfer
+
+  @@schema("tenant")
+}
+
+enum ReceivableStatus {
+  pending
+  received
+  overdue
+  cancelled
+
+  @@schema("tenant")
+}
+
+enum CommissionPaymentStatus {
+  pending
+  paid
+  cancelled
+
+  @@schema("tenant")
+}
+
+enum NotificationType {
+  renewal
+  overdue
+  system
+  report
+
+  @@schema("tenant")
+}
