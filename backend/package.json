@@ -20,7 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed": "ts-node prisma/seed.ts",
     "postinstall": "npx prisma generate",
-    "vercel-build": "DATABASE_URL=file:./prisma/dev.db npx prisma db push --skip-generate && DATABASE_URL=file:./prisma/dev.db npx ts-node prisma/seed.ts"
+    "vercel-build": "DATABASE_URL=file:./prisma/dev.db npx prisma db push --skip-generate && DATABASE_URL=file:./prisma/dev.db npx ts-node prisma/seed.ts && npx nest build"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
@@ -53,7 +53,6 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.1",
-    "uuid": "^13.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -70,7 +69,6 @@
     "@types/nodemailer": "^7.0.11",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
-    "@types/uuid": "^10.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
