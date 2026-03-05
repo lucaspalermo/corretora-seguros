@@ -25,6 +25,11 @@ function findSeedDb(): string | null {
 async function bootstrap() {
   if (cachedApp) return cachedApp;
 
+  // Set default env vars for serverless
+  if (!process.env.JWT_SECRET) process.env.JWT_SECRET = 'vercel-demo-secret-key-2026';
+  if (!process.env.JWT_REFRESH_SECRET) process.env.JWT_REFRESH_SECRET = 'vercel-demo-refresh-secret-2026';
+  if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production';
+
   // Setup SQLite in /tmp (writable in serverless)
   const runtimeDb = '/tmp/dev.db';
 
